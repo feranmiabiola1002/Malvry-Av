@@ -1,0 +1,9 @@
+{
+    "version": "1.0.0",
+    "installer_url": "https://github.com/malvryx/malvryx-av/releases/latest/download/MalvryxAV_Setup.exe",
+    "changelog": "Initial release - Signature + YARA + Behavioral detection",
+    "release_date": "2024-01-15",
+    "min_python_version": "3.8",
+    "signatures_count": 15,
+    "yara_rules_count": 1
+}
