@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, jsonify, request
+from flask import Flask, render_template_string, jsonify, request, send_file
 import psutil
 import os
 import json
@@ -80,6 +80,8 @@ DASHBOARD_HTML = '''
             font-weight: bold;
             margin: 5px;
             transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
         }
         .btn:hover {
             background: #00cc33;
@@ -236,6 +238,7 @@ DASHBOARD_HTML = '''
             </div>
             <button class="btn" onclick="generateReport()">📄 Generate Report</button>
             <button class="btn btn-outline" onclick="checkUpdates()">🔄 Check Updates</button>
+            <a href="/download" class="btn" style="display:inline-block;text-decoration:none;margin-top:10px;">⬇️ Download Installer</a>
         </div>
     </div>
 </div>
@@ -519,6 +522,58 @@ def check_update():
 def download_update():
     return jsonify({'message': 'No update available'})
 
+# ========== NEW DOWNLOAD ROUTES ==========
+@app.route('/download')
+def download_page():
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Download Malvryx AV</title>
+        <style>
+            body { background: #0a0a0a; color: #00ff41; font-family: 'Courier New', monospace; padding: 40px; text-align: center; }
+            .container { max-width: 600px; margin: 0 auto; }
+            .btn { display: inline-block; background: #00ff41; color: #0a0a0a; padding: 20px 40px; border-radius: 10px; font-size: 24px; font-weight: bold; text-decoration: none; margin: 20px; }
+            .btn:hover { background: #00cc33; transform: scale(1.05); }
+            .version { color: #888; }
+            .features { text-align: left; margin: 30px auto; max-width: 400px; }
+            .features li { padding: 8px 0; border-bottom: 1px solid #1a1a1a; list-style: none; }
+            .features li:before { content: "✅ "; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>⚡ Malvryx AV</h1>
+            <p class="version">Version 1.0.0</p>
+            <p style="color:#888;">Free • Open Source • No Spyware</p>
+            
+            <div class="features">
+                <li>Real-time Protection</li>
+                <li>Signature + YARA Detection</li>
+                <li>Behavioral Monitoring</li>
+                <li>Web Dashboard</li>
+                <li>One-click Install</li>
+            </div>
+            
+            <a href="/api/download/installer" class="btn">⬇️ Download Installer</a>
+            <p style="color:#555;font-size:12px;">Windows 10/11 • 15MB • One-click install</p>
+            
+            <div style="margin-top: 30px; border-top: 1px solid #1a1a1a; padding-top: 20px;">
+                <a href="/" style="color:#00ff41;text-decoration:none;">← Back to Dashboard</a>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/api/download/installer')
+def download_installer():
+    # Path to your installer file
+    installer_path = os.path.join(os.path.dirname(__file__), '..', 'installer', 'dist', 'MalvryxAV_Setup.exe')
+    if os.path.exists(installer_path):
+        return send_file(installer_path, as_attachment=True, download_name='MalvryxAV_Setup.exe')
+    return "Installer not found. Please build it first. Run: cd installer && build_installer.bat", 404
+
 # ========== CLOUD ENTRY POINT ==========
 if __name__ == '__main__':
     print("""
@@ -533,5 +588,6 @@ if __name__ == '__main__':
         print("[*] Running on Vercel")
     else:
         print(f"[*] Running locally - http://localhost:{PORT}")
+        print(f"[*] Download page: http://localhost:{PORT}/download")
     
     app.run(host='0.0.0.0', port=PORT, debug=False)
