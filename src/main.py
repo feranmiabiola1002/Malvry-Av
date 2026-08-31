@@ -6,12 +6,14 @@ import threading
 import os
 import subprocess
 import json
-from scanner import Scanner
-from behavior import BehaviorMonitor
-from quarantine import Quarantine
-from watcher import FileWatcher
-from database import init_default_signatures
-from config import WATCH_FOLDER, VERSION, IS_CLOUD
+
+# Import from same folder
+from .scanner import Scanner
+from .behavior import BehaviorMonitor
+from .quarantine import Quarantine
+from .watcher import FileWatcher
+from .database import init_default_signatures
+from .config import WATCH_FOLDER, VERSION, IS_CLOUD
 
 class MalvryxAV:
     def __init__(self):
@@ -48,7 +50,6 @@ class MalvryxAV:
         return self.quarantine.delete_quarantine(index)
     
     def check_updates(self):
-        """Auto-update check"""
         try:
             import requests
             response = requests.get(
@@ -72,20 +73,11 @@ class MalvryxAV:
             return False
     
     def start_web(self, port=5000):
-        """Start web server"""
-        print(f"[*] Starting web server on port {port}")
-        if sys.platform == 'win32':
-            os.system(f'start http://localhost:{port}')
-        else:
-            os.system(f'xdg-open http://localhost:{port}')
-        
-        from web_server import app
+        from .web_server import app
         app.run(host='0.0.0.0', port=port, debug=False)
     
     def start_cloud(self):
-        """Start in cloud mode (web only)"""
-        print("[*] Starting in cloud mode...")
-        from web_server import app
+        from .web_server import app
         port = int(os.environ.get('PORT', 5000))
         app.run(host='0.0.0.0', port=port, debug=False)
     
@@ -113,7 +105,6 @@ def main():
         print("[*] Initializing database...")
         init_default_signatures()
         print("[+] Database initialized")
-    
     elif args.command == 'scan':
         results = av.scan(args.path, args.full)
         if results:
@@ -124,7 +115,6 @@ def main():
                     print(f"    -> {det['type']}: {det['name']} ({det['severity']})")
         else:
             print("[+] No threats found")
-    
     elif args.command == 'monitor':
         print("[*] Monitoring running processes...")
         alerts = av.monitor()
@@ -134,35 +124,27 @@ def main():
                 print(f"  PID {pid}: {alert}")
         else:
             print("[+] No suspicious processes detected")
-    
     elif args.command == 'watch':
         print("[*] Starting real-time protection...")
         av.watch()
-    
     elif args.command == 'web':
         av.start_web(args.port)
-    
     elif args.command == 'cloud':
         av.start_cloud()
-    
     elif args.command == 'quarantine':
         av.list_quarantine()
-    
     elif args.command == 'restore':
         if args.index is None:
             print("[-] Please specify --index")
         else:
             av.restore(args.index)
-    
     elif args.command == 'delete':
         if args.index is None:
             print("[-] Please specify --index")
         else:
             av.delete_quarantine(args.index)
-    
     elif args.command == 'update':
         av.check_updates()
-    
     else:
         print(f"""
 ╔═══════════════════════════════════════════╗
@@ -189,7 +171,6 @@ Examples:
   python -m src.main watch
   python -m src.main web --port 5000
         """)
-    
     av.stop()
 
 if __name__ == "__main__":
