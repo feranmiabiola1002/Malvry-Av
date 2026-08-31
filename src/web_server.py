@@ -1,11 +1,15 @@
+import sys
+import os
+
+# Add current directory to path so imports work
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from flask import Flask, render_template_string, jsonify, request, send_file
 import psutil
-import os
 import json
 import datetime
 import threading
 import time
-import sys
 
 # ========== CLOUD COMPATIBILITY ==========
 IS_RENDER = os.environ.get('RENDER') == 'true'
@@ -15,7 +19,7 @@ PORT = int(os.environ.get('PORT', 5000))
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'malvryx_secret_key_2024'
 
-# HTML Dashboard
+# HTML Dashboard (keep your existing DASHBOARD_HTML here)
 DASHBOARD_HTML = '''
 <!DOCTYPE html>
 <html>
@@ -337,7 +341,6 @@ function checkUpdates() {
 
 // Update stats every 2 seconds
 setInterval(() => {
-    // System stats
     fetch('/api/status')
     .then(r => r.json())
     .then(data => {
@@ -356,7 +359,6 @@ setInterval(() => {
             `${hours}h ${minutes}m ${seconds}s`;
     });
     
-    // Processes
     fetch('/api/processes')
     .then(r => r.json())
     .then(data => {
@@ -366,7 +368,6 @@ setInterval(() => {
         ).join('');
     });
     
-    // Quarantine
     fetch('/api/quarantine')
     .then(r => r.json())
     .then(data => {
@@ -383,7 +384,6 @@ setInterval(() => {
         }
     });
     
-    // Stats
     fetch('/api/stats')
     .then(r => r.json())
     .then(data => {
@@ -522,7 +522,7 @@ def check_update():
 def download_update():
     return jsonify({'message': 'No update available'})
 
-# ========== NEW DOWNLOAD ROUTES ==========
+# ========== DOWNLOAD ROUTES ==========
 @app.route('/download')
 def download_page():
     return '''
@@ -546,7 +546,6 @@ def download_page():
             <h1>⚡ Malvryx AV</h1>
             <p class="version">Version 1.0.0</p>
             <p style="color:#888;">Free • Open Source • No Spyware</p>
-            
             <div class="features">
                 <li>Real-time Protection</li>
                 <li>Signature + YARA Detection</li>
@@ -554,10 +553,8 @@ def download_page():
                 <li>Web Dashboard</li>
                 <li>One-click Install</li>
             </div>
-            
             <a href="/api/download/installer" class="btn">⬇️ Download Installer</a>
             <p style="color:#555;font-size:12px;">Windows 10/11 • 15MB • One-click install</p>
-            
             <div style="margin-top: 30px; border-top: 1px solid #1a1a1a; padding-top: 20px;">
                 <a href="/" style="color:#00ff41;text-decoration:none;">← Back to Dashboard</a>
             </div>
@@ -568,11 +565,10 @@ def download_page():
 
 @app.route('/api/download/installer')
 def download_installer():
-    # Path to your installer file
     installer_path = os.path.join(os.path.dirname(__file__), '..', 'installer', 'dist', 'MalvryxAV_Setup.exe')
     if os.path.exists(installer_path):
         return send_file(installer_path, as_attachment=True, download_name='MalvryxAV_Setup.exe')
-    return "Installer not found. Please build it first. Run: cd installer && build_installer.bat", 404
+    return "Installer not found. Please build it first.", 404
 
 # ========== CLOUD ENTRY POINT ==========
 if __name__ == '__main__':
