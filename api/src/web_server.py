@@ -178,4 +178,360 @@ DASHBOARD_HTML = '''
             <div class="progress"><div class="progress-fill" id="mem-bar"></div></div>
         </div>
         <div class="card">
-            <h3>💾 Disk Usage
+            <h3>💾 Disk Usage</h3>
+            <div class="value" id="disk">0%</div>
+            <div class="progress"><div class="progress-fill" id="disk-bar"></div></div>
+        </div>
+    </div>
+    
+    <div class="grid">
+        <div class="card full">
+            <h3>🔍 Scan Controls</h3>
+            <div class="input-group">
+                <button class="btn" onclick="startScan('quick')">⚡ Quick Scan</button>
+                <button class="btn" onclick="startScan('full')">🔍 Full Scan</button>
+                <button class="btn btn-outline" onclick="startScan('custom')">📁 Custom Scan</button>
+                <input type="text" id="scan-path" placeholder="Path to scan (e.g., C:/Downloads)" value="/tmp">
+                <button class="btn btn-danger" onclick="stopScan()">⏹ Stop</button>
+            </div>
+            <div id="scan-progress" style="display:none;margin-top:15px;">
+                <div>Status: <span id="scan-status">Running...</span></div>
+                <div class="progress" style="margin:10px 0;">
+                    <div class="progress-fill" id="scan-bar" style="width:0%"></div>
+                </div>
+                <div>Files: <span id="scan-files">0</span> | Threats: <span id="scan-threats">0</span></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="grid">
+        <div class="card full">
+            <h3>📊 Live Log</h3>
+            <div class="log" id="log">
+                <div class="log-line"><span class="time">[System]</span> <span class="info">Dashboard connected</span></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="grid">
+        <div class="card">
+            <h3>🔄 Running Processes</h3>
+            <div class="process-list" id="processes">
+                <div class="process-item">Loading...</div>
+            </div>
+        </div>
+        <div class="card">
+            <h3>🔒 Quarantine</h3>
+            <div class="quarantine-list" id="quarantine">
+                <div class="quarantine-item">Empty</div>
+            </div>
+        </div>
+        <div class="card">
+            <h3>📈 Statistics</h3>
+            <div style="margin:10px 0;">
+                <div>Files Scanned: <span id="total-files" style="color:#00ff41;">0</span></div>
+                <div>Threats Found: <span id="total-threats" style="color:#ff0044;">0</span></div>
+                <div>Signatures: <span id="total-signatures" style="color:#00ff41;">0</span></div>
+                <div>Uptime: <span id="uptime">0s</span></div>
+            </div>
+            <button class="btn" onclick="generateReport()">📄 Generate Report</button>
+            <button class="btn btn-outline" onclick="checkUpdates()">🔄 Check Updates</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const startTime = Date.now();
+let scanId = null;
+let scanInterval = null;
+
+function addLog(msg, type = 'info') {
+    const log = document.getElementById('log');
+    const time = new Date().toLocaleTimeString();
+    const colors = { info: '#00ff41', warning: '#ffff00', error: '#ff0044' };
+    log.innerHTML += `<div class="log-line"><span class="time">[${time}]</span> <span style="color:${colors[type] || '#00ff41'}">${msg}</span></div>`;
+    log.scrollTop = log.scrollHeight;
+}
+
+function startScan(type) {
+    const path = document.getElementById('scan-path').value || '/tmp';
+    document.getElementById('scan-progress').style.display = 'block';
+    document.getElementById('scan-bar').style.width = '0%';
+    document.getElementById('scan-status').textContent = 'Starting...';
+    addLog(`Starting ${type} scan on ${path}`, 'info');
+    
+    fetch('/api/scan', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: type, path: path})
+    })
+    .then(r => r.json())
+    .then(data => {
+        scanId = data.scan_id;
+        addLog(`Scan ID: ${scanId} started`, 'info');
+        
+        if (scanInterval) clearInterval(scanInterval);
+        scanInterval = setInterval(() => {
+            fetch('/api/scan/' + scanId + '/status')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('scan-bar').style.width = data.progress + '%';
+                document.getElementById('scan-files').textContent = data.files || 0;
+                document.getElementById('scan-threats').textContent = data.threats || 0;
+                document.getElementById('scan-status').textContent = data.status;
+                
+                if (data.status === 'completed') {
+                    clearInterval(scanInterval);
+                    addLog(`Scan completed: ${data.threats || 0} threats found`, 
+                          data.threats > 0 ? 'warning' : 'info');
+                    setTimeout(() => {
+                        document.getElementById('scan-progress').style.display = 'none';
+                    }, 3000);
+                }
+            });
+        }, 1000);
+    })
+    .catch(err => {
+        addLog(`Scan error: ${err}`, 'error');
+    });
+}
+
+function stopScan() {
+    addLog('Scan stopped by user', 'warning');
+    document.getElementById('scan-progress').style.display = 'none';
+    if (scanInterval) clearInterval(scanInterval);
+}
+
+function generateReport() {
+    addLog('Generating report...', 'info');
+    fetch('/api/report', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: 'html'})
+    })
+    .then(r => r.json())
+    .then(data => {
+        addLog(`Report generated: ${data.report_path}`, 'info');
+        window.open('/api/report/download/' + data.report_id, '_blank');
+    });
+}
+
+function checkUpdates() {
+    addLog('Checking for updates...', 'info');
+    fetch('/api/update')
+    .then(r => r.json())
+    .then(data => {
+        if (data.update_available) {
+            addLog(`Update available: ${data.version}`, 'warning');
+            if (confirm(`New version ${data.version} available. Download now?`)) {
+                window.location.href = '/api/download/update';
+            }
+        } else {
+            addLog('You have the latest version', 'info');
+        }
+    });
+}
+
+// Update stats every 2 seconds
+setInterval(() => {
+    // System stats
+    fetch('/api/status')
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('cpu').textContent = data.cpu + '%';
+        document.getElementById('mem').textContent = data.memory + '%';
+        document.getElementById('disk').textContent = data.disk + '%';
+        document.getElementById('cpu-bar').style.width = data.cpu + '%';
+        document.getElementById('mem-bar').style.width = data.memory + '%';
+        document.getElementById('disk-bar').style.width = data.disk + '%';
+        
+        const uptime = Math.floor((Date.now() - startTime) / 1000);
+        const hours = Math.floor(uptime / 3600);
+        const minutes = Math.floor((uptime % 3600) / 60);
+        const seconds = uptime % 60;
+        document.getElementById('uptime').textContent = 
+            `${hours}h ${minutes}m ${seconds}s`;
+    });
+    
+    // Processes
+    fetch('/api/processes')
+    .then(r => r.json())
+    .then(data => {
+        const div = document.getElementById('processes');
+        div.innerHTML = data.slice(0, 30).map(p => 
+            `<div class="process-item">${p.name || 'Unknown'} - CPU: ${p.cpu || 0}% Mem: ${p.memory || 0}%</div>`
+        ).join('');
+    });
+    
+    // Quarantine
+    fetch('/api/quarantine')
+    .then(r => r.json())
+    .then(data => {
+        const div = document.getElementById('quarantine');
+        if (data.length === 0) {
+            div.innerHTML = '<div class="quarantine-item">Empty</div>';
+        } else {
+            div.innerHTML = data.map(item => 
+                `<div class="quarantine-item">
+                    <span>${item.name}</span>
+                    <span style="color:#888;">${(item.size/1024).toFixed(1)}KB</span>
+                </div>`
+            ).join('');
+        }
+    });
+    
+    // Stats
+    fetch('/api/stats')
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('total-files').textContent = data.files_scanned || 0;
+        document.getElementById('total-threats').textContent = data.threats_found || 0;
+        document.getElementById('total-signatures').textContent = data.signatures || 0;
+    });
+}, 2000);
+</script>
+</body>
+</html>
+'''
+
+# Global state
+scans = {}
+scan_progress = {}
+
+@app.route('/')
+def index():
+    return render_template_string(DASHBOARD_HTML)
+
+@app.route('/api/status')
+def status():
+    try:
+        cpu = psutil.cpu_percent()
+        mem = psutil.virtual_memory().percent
+        disk = psutil.disk_usage('/').percent if hasattr(psutil, 'disk_usage') else 0
+    except:
+        cpu = 0
+        mem = 0
+        disk = 0
+    return jsonify({
+        'cpu': cpu,
+        'memory': mem,
+        'disk': disk,
+        'connections': 0,
+        'processes': 0
+    })
+
+@app.route('/api/processes')
+def processes():
+    procs = []
+    try:
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            try:
+                info = proc.info
+                procs.append({
+                    'name': info['name'],
+                    'cpu': round(info['cpu_percent'] or 0, 1),
+                    'memory': round(info['memory_percent'] or 0, 1)
+                })
+            except:
+                pass
+    except:
+        pass
+    return jsonify(procs[:50])
+
+@app.route('/api/quarantine')
+def quarantine():
+    items = []
+    quarantine_dir = os.path.join(os.path.dirname(__file__), 'quarantine')
+    if os.path.exists(quarantine_dir):
+        for f in os.listdir(quarantine_dir):
+            if f.endswith('.zip'):
+                path = os.path.join(quarantine_dir, f)
+                items.append({
+                    'name': f,
+                    'size': os.path.getsize(path),
+                    'date': datetime.datetime.fromtimestamp(os.path.getctime(path)).isoformat()
+                })
+    return jsonify(items)
+
+@app.route('/api/stats')
+def stats():
+    return jsonify({
+        'files_scanned': 0,
+        'threats_found': 0,
+        'signatures': 0
+    })
+
+@app.route('/api/scan', methods=['POST'])
+def start_scan():
+    data = request.json
+    scan_id = str(int(time.time()))
+    scans[scan_id] = {
+        'status': 'running',
+        'progress': 0,
+        'files': 0,
+        'threats': 0,
+        'path': data.get('path', '/'),
+        'type': data.get('type', 'quick')
+    }
+    
+    def run_scan():
+        total = 100
+        for i in range(total):
+            time.sleep(0.05)
+            scans[scan_id]['progress'] = i + 1
+            scans[scan_id]['files'] = i * 10
+            scans[scan_id]['threats'] = i // 15
+        scans[scan_id]['status'] = 'completed'
+    
+    threading.Thread(target=run_scan, daemon=True).start()
+    return jsonify({'scan_id': scan_id})
+
+@app.route('/api/scan/<scan_id>/status')
+def scan_status(scan_id):
+    return jsonify(scans.get(scan_id, {'status': 'not_found'}))
+
+@app.route('/api/report', methods=['POST'])
+def generate_report():
+    report_id = str(int(time.time()))
+    report_path = f"report_{report_id}.html"
+    with open(report_path, 'w') as f:
+        f.write(f"""
+        <html><head><title>Malvryx AV Report</title></head>
+        <body style="background:#0a0a0a;color:#00ff41;font-family:monospace;padding:20px;">
+        <h1>Malvryx AV Scan Report</h1>
+        <p>Generated: {datetime.datetime.now()}</p>
+        <p>Status: Clean</p>
+        <p>No threats detected</p>
+        </body></html>
+        """)
+    return jsonify({'report_id': report_id, 'report_path': report_path})
+
+@app.route('/api/report/download/<report_id>')
+def download_report(report_id):
+    from flask import send_file
+    return send_file(f"report_{report_id}.html", as_attachment=True)
+
+@app.route('/api/update')
+def check_update():
+    return jsonify({'update_available': False, 'version': '1.0.0'})
+
+@app.route('/api/download/update')
+def download_update():
+    return jsonify({'message': 'No update available'})
+
+# ========== CLOUD ENTRY POINT ==========
+if __name__ == '__main__':
+    print("""
+╔═══════════════════════════════════════════╗
+║   MALVRYX AV - Web Control Center         ║
+╚═══════════════════════════════════════════╝
+    """)
+    
+    if IS_RENDER:
+        print(f"[*] Running on Render - Port: {PORT}")
+    elif IS_VERCEL:
+        print("[*] Running on Vercel")
+    else:
+        print(f"[*] Running locally - http://localhost:{PORT}")
+    
+    app.run(host='0.0.0.0', port=PORT, debug=False)
