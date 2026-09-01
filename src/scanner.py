@@ -2,8 +2,8 @@ import os
 import hashlib
 import yara
 import time
-from config import MAX_FILE_SIZE, SCAN_TIMEOUT
-from database import Database
+from .config import MAX_FILE_SIZE, SCAN_TIMEOUT
+from .database import Database
 
 class Scanner:
     def __init__(self):
