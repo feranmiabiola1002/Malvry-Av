@@ -10,14 +10,12 @@ IS_CLOUD = IS_RENDER or IS_VERCEL
 
 # ========== PATHS ==========
 if IS_RENDER or IS_VERCEL:
-    # Cloud platforms use /tmp for ephemeral storage
     BASE_DIR = '/tmp'
     DB_PATH = '/tmp/signatures.db'
     QUARANTINE_DIR = '/tmp/quarantine'
     LOGS_DIR = '/tmp/logs'
     WATCH_FOLDER = '/tmp/watch_folder'
 else:
-    # Local development
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DB_PATH = os.path.join(BASE_DIR, 'signatures.db')
     QUARANTINE_DIR = os.path.join(BASE_DIR, 'quarantine')
@@ -50,11 +48,3 @@ WEB_PORT = int(os.environ.get('PORT', 5000))
 
 # ========== LOGGING ==========
 LOG_LEVEL = 'INFO'
-
-# ========== PRINT STATUS ==========
-if IS_RENDER:
-    print("[*] Running on Render")
-elif IS_VERCEL:
-    print("[*] Running on Vercel")
-else:
-    print("[*] Running locally")
