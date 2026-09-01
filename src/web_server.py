@@ -19,7 +19,7 @@ PORT = int(os.environ.get('PORT', 5000))
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'malvryx_secret_key_2024'
 
-# HTML Dashboard (keep your existing DASHBOARD_HTML here)
+# HTML Dashboard
 DASHBOARD_HTML = '''
 <!DOCTYPE html>
 <html>
