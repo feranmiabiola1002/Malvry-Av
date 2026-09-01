@@ -21,8 +21,6 @@ RUN pip install -r requirements.txt
 COPY src/ ./src/
 COPY installer/ ./installer/
 COPY tests/ ./tests/
-COPY render.yaml .
-COPY vercel.json .
 
 ENV PYTHONPATH=/app
 ENV PORT=5000
