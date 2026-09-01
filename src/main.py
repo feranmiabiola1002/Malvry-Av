@@ -1,112 +1,196 @@
-import os
-import hashlib
-import yara
+#!/usr/bin/env python3
+import sys
 import time
-from .config import MAX_FILE_SIZE, SCAN_TIMEOUT
-from .database import Database
+import argparse
+import threading
+import os
+import subprocess
+import json
+from .scanner import Scanner
+from .behavior import BehaviorMonitor
+from .quarantine import Quarantine
+from .watcher import FileWatcher
+from .database import init_default_signatures
+from .config import WATCH_FOLDER, VERSION, IS_CLOUD
 
-class Scanner:
+class MalvryxAV:
     def __init__(self):
-        self.db = Database()
-        self.yara_rules = None
-        self.compile_yara_rules()
+        self.scanner = Scanner()
+        self.behavior = BehaviorMonitor()
+        self.quarantine = Quarantine()
+        self.watcher = None
+        self.running = True
     
-    def compile_yara_rules(self):
-        rules = self.db.get_all_yara_rules()
-        if rules:
-            try:
-                rule_source = '\n'.join([r[1] for r in rules if r[1]])
-                self.yara_rules = yara.compile(source=rule_source)
-            except Exception as e:
-                print(f"[-] YARA compile error: {e}")
-                self.yara_rules = None
+    def scan(self, path, full=False):
+        if full:
+            path = 'C:\\' if sys.platform == 'win32' else '/'
+        return self.scanner.scan_directory(path)
     
-    def get_file_hash(self, filepath):
+    def monitor(self):
+        return self.behavior.scan_running_processes()
+    
+    def watch(self):
+        self.watcher = FileWatcher()
+        self.watcher.start()
         try:
-            hasher = hashlib.md5()
-            with open(filepath, 'rb') as f:
-                for chunk in iter(lambda: f.read(8192), b''):
-                    hasher.update(chunk)
-            return hasher.hexdigest()
-        except Exception:
-            return None
+            while self.running:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            self.stop()
     
-    def scan_file(self, filepath):
-        if not os.path.isfile(filepath):
-            return None
-        
+    def list_quarantine(self):
+        return self.quarantine.list_quarantined()
+    
+    def restore(self, index):
+        return self.quarantine.restore(index)
+    
+    def delete_quarantine(self, index):
+        return self.quarantine.delete_quarantine(index)
+    
+    def check_updates(self):
+        """Auto-update check"""
         try:
-            file_size = os.path.getsize(filepath)
-            if file_size > MAX_FILE_SIZE:
-                return [{'type': 'skipped', 'name': 'File too large', 'severity': 'info'}]
-        except:
-            return None
-        
-        detections = []
-        
-        # 1. Hash-based detection
-        file_hash = self.get_file_hash(filepath)
-        if file_hash:
-            sig = self.db.get_signature_by_hash(file_hash)
-            if sig:
-                sig_id, name, severity = sig
-                detections.append({
-                    'type': 'hash_match',
-                    'name': name,
-                    'severity': severity,
-                    'id': sig_id
-                })
-                self.db.log_detection(filepath, sig_id, 'hash_match')
-        
-        # 2. YARA-based detection
-        if self.yara_rules and not detections:
-            try:
-                matches = self.yara_rules.match(filepath, timeout=SCAN_TIMEOUT)
-                for match in matches:
-                    sig = self.db.cursor.execute(
-                        "SELECT id, severity FROM signatures WHERE yara_rule LIKE ?",
-                        (f'%{match.rule}%',)
-                    ).fetchone()
-                    if sig:
-                        sig_id, severity = sig
-                        detections.append({
-                            'type': 'yara_match',
-                            'name': match.rule,
-                            'severity': severity,
-                            'id': sig_id
-                        })
-                        self.db.log_detection(filepath, sig_id, 'yara_match')
-            except Exception as e:
-                pass
-        
-        return detections if detections else None
+            import requests
+            response = requests.get(
+                'https://raw.githubusercontent.com/malvryx/malvryx-av/main/version.json',
+                timeout=5
+            )
+            latest = response.json()
+            if latest.get('version', '0') > VERSION:
+                print(f"[!] New version {latest['version']} available!")
+                print("[*] Downloading update...")
+                installer = requests.get(latest['installer_url'])
+                with open('MalvryxAV_Update.exe', 'wb') as f:
+                    f.write(installer.content)
+                print("[+] Update downloaded. Run MalvryxAV_Update.exe to install.")
+                return True
+            else:
+                print("[+] You have the latest version")
+                return False
+        except Exception as e:
+            print(f"[-] Update check failed: {e}")
+            return False
     
-    def scan_directory(self, path):
-        """Scan entire directory recursively"""
-        if not os.path.exists(path):
-            print(f"[-] Path does not exist: {path}")
-            return []
+    def start_web(self, port=5000):
+        """Start web server"""
+        print(f"[*] Starting web server on port {port}")
+        if sys.platform == 'win32':
+            os.system(f'start http://localhost:{port}')
+        else:
+            os.system(f'xdg-open http://localhost:{port}')
         
-        infected = []
-        total = 0
-        print(f"[*] Scanning: {path}")
-        
-        for root, dirs, files in os.walk(path):
-            for file in files:
-                full_path = os.path.join(root, file)
-                total += 1
-                if total % 100 == 0:
-                    print(f"[*] Scanned {total} files...")
-                
-                result = self.scan_file(full_path)
-                if result:
-                    infected.append((full_path, result))
-                    print(f"[!] INFECTED: {full_path}")
-                    for det in result:
-                        print(f"    -> {det['type']}: {det['name']} ({det['severity']})")
-        
-        print(f"[+] Complete. {len(infected)} threats found out of {total} files.")
-        return infected
+        from .web_server import app
+        app.run(host='0.0.0.0', port=port, debug=False)
     
-    def close(self):
-        self.db.close()
+    def start_cloud(self):
+        """Start in cloud mode (web only)"""
+        print("[*] Starting in cloud mode...")
+        from .web_server import app
+        port = int(os.environ.get('PORT', 5000))
+        app.run(host='0.0.0.0', port=port, debug=False)
+    
+    def stop(self):
+        self.running = False
+        if self.watcher:
+            self.watcher.stop()
+        self.scanner.close()
+        print("[+] Shutdown complete")
+
+def main():
+    parser = argparse.ArgumentParser(description='Malvryx AV Engine')
+    parser.add_argument('command', nargs='?', default='help',
+                       choices=['init', 'scan', 'monitor', 'watch', 'web', 'cloud',
+                               'quarantine', 'restore', 'delete', 'update', 'help'])
+    parser.add_argument('--path', default='./watch_folder', help='Path to scan')
+    parser.add_argument('--index', type=int, help='Quarantine item index')
+    parser.add_argument('--full', action='store_true', help='Full system scan')
+    parser.add_argument('--port', type=int, default=5000, help='Web server port')
+    
+    args = parser.parse_args()
+    av = MalvryxAV()
+    
+    if args.command == 'init':
+        print("[*] Initializing database...")
+        init_default_signatures()
+        print("[+] Database initialized")
+    
+    elif args.command == 'scan':
+        results = av.scan(args.path, args.full)
+        if results:
+            print(f"\n[!] {len(results)} threats found")
+            for file, detections in results:
+                print(f"  {file}")
+                for det in detections:
+                    print(f"    -> {det['type']}: {det['name']} ({det['severity']})")
+        else:
+            print("[+] No threats found")
+    
+    elif args.command == 'monitor':
+        print("[*] Monitoring running processes...")
+        alerts = av.monitor()
+        if alerts:
+            print(f"[!] {len(alerts)} suspicious processes found")
+            for pid, alert in alerts:
+                print(f"  PID {pid}: {alert}")
+        else:
+            print("[+] No suspicious processes detected")
+    
+    elif args.command == 'watch':
+        print("[*] Starting real-time protection...")
+        av.watch()
+    
+    elif args.command == 'web':
+        av.start_web(args.port)
+    
+    elif args.command == 'cloud':
+        av.start_cloud()
+    
+    elif args.command == 'quarantine':
+        av.list_quarantine()
+    
+    elif args.command == 'restore':
+        if args.index is None:
+            print("[-] Please specify --index")
+        else:
+            av.restore(args.index)
+    
+    elif args.command == 'delete':
+        if args.index is None:
+            print("[-] Please specify --index")
+        else:
+            av.delete_quarantine(args.index)
+    
+    elif args.command == 'update':
+        av.check_updates()
+    
+    else:
+        print(f"""
+╔═══════════════════════════════════════════╗
+║   MALVRYX AV v{VERSION}                        ║
+║   Next-Generation Antivirus Engine       ║
+╚═══════════════════════════════════════════╝
+
+Commands:
+  init              - Initialize database
+  scan --path /path - Scan a directory
+  scan --full       - Full system scan
+  monitor           - Monitor running processes
+  watch             - Start real-time protection
+  web --port 5000   - Start web dashboard
+  cloud             - Start in cloud mode (Render/Vercel)
+  quarantine        - List quarantined files
+  restore --index N - Restore from quarantine
+  delete --index N  - Delete from quarantine permanently
+  update            - Check for updates
+
+Examples:
+  python -m src.main init
+  python -m src.main scan --path C:/Downloads
+  python -m src.main watch
+  python -m src.main web --port 5000
+        """)
+    
+    av.stop()
+
+if __name__ == "__main__":
+    main()
