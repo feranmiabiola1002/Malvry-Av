@@ -2,7 +2,7 @@ import os
 import zipfile
 import datetime
 import json
-from config import QUARANTINE_DIR, QUARANTINE_PASSWORD
+from .config import QUARANTINE_DIR, QUARANTINE_PASSWORD
 
 class Quarantine:
     def __init__(self):
